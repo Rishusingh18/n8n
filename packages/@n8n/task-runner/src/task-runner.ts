@@ -235,6 +235,9 @@ export abstract class TaskRunner extends EventEmitter {
 			case 'broker:nodetypes':
 				this.processNodeTypesResponse(message.requestId, message.nodeTypes);
 				break;
+			case 'broker:drain':
+				this.stopTaskOffers();
+				break;
 		}
 	}
 
@@ -394,7 +397,6 @@ export abstract class TaskRunner extends EventEmitter {
 		});
 	}
 
-	// eslint-disable-next-line @typescript-eslint/naming-convention
 	async executeTask(_taskParams: TaskParams, _signal: AbortSignal): Promise<TaskResultData> {
 		throw new ApplicationError('Unimplemented');
 	}

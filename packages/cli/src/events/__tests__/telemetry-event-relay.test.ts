@@ -1,24 +1,34 @@
+import type { NodeTypes } from '@/node-types';
+import { mockInstance } from '@n8n/backend-test-utils';
 import type { GlobalConfig } from '@n8n/config';
-import type { CredentialsEntity } from '@n8n/db';
-import type { WorkflowEntity } from '@n8n/db';
-import type { IWorkflowDb } from '@n8n/db';
-import type { CredentialsRepository } from '@n8n/db';
-import type { ProjectRelationRepository } from '@n8n/db';
-import type { SharedWorkflowRepository } from '@n8n/db';
-import type { WorkflowRepository } from '@n8n/db';
+import {
+	type CredentialsEntity,
+	type CredentialsRepository,
+	type IWorkflowDb,
+	type ProjectRelationRepository,
+	type SharedWorkflowRepository,
+	type WorkflowEntity,
+	type WorkflowRepository,
+	GLOBAL_OWNER_ROLE,
+} from '@n8n/db';
 import { mock } from 'jest-mock-extended';
 import { type BinaryDataConfig, InstanceSettings } from 'n8n-core';
-import type { INode, INodesGraphResult } from 'n8n-workflow';
-import { NodeApiError, TelemetryHelpers, type IRun, type IWorkflowBase } from 'n8n-workflow';
+import {
+	createErrorExecutionData,
+	type INode,
+	type INodesGraphResult,
+	type IRun,
+	type IWorkflowBase,
+	NodeApiError,
+	TelemetryHelpers,
+} from 'n8n-workflow';
 
 import { N8N_VERSION } from '@/constants';
 import { EventService } from '@/events/event.service';
 import type { RelayEventMap } from '@/events/maps/relay.event-map';
 import { TelemetryEventRelay } from '@/events/relays/telemetry.event-relay';
 import type { License } from '@/license';
-import type { NodeTypes } from '@/node-types';
 import type { Telemetry } from '@/telemetry';
-import { mockInstance } from '@test/mocking';
 
 const flushPromises = async () => await new Promise((resolve) => setImmediate(resolve));
 
@@ -50,6 +60,12 @@ describe('TelemetryEventRelay', () => {
 		logging: {
 			level: 'info',
 			outputs: ['console'],
+		},
+		workflowHistoryCompaction: {
+			batchDelayMs: 123,
+			batchSize: 234,
+			optimizingTimeWindowHours: 400,
+			trimmingTimeWindowDays: 600,
 		},
 	});
 	const binaryDataConfig = mock<BinaryDataConfig>({
@@ -205,6 +221,7 @@ describe('TelemetryEventRelay', () => {
 				readOnlyInstance: false,
 				repoType: 'github',
 				connected: true,
+				connectionType: 'ssh',
 			};
 
 			eventService.emit('source-control-settings-updated', event);
@@ -214,6 +231,7 @@ describe('TelemetryEventRelay', () => {
 				read_only_instance: false,
 				repo_type: 'github',
 				connected: true,
+				connection_type: 'ssh',
 			});
 		});
 
@@ -319,10 +337,130 @@ describe('TelemetryEventRelay', () => {
 	});
 
 	describe('variable events', () => {
-		it('should track on `variable-created` event', () => {
-			eventService.emit('variable-created', {});
+		it('should track on `variable-created` event without projectId', () => {
+			const event: RelayEventMap['variable-created'] = {
+				user: {
+					id: 'user123',
+					email: 'test@example.com',
+					firstName: 'Test',
+					lastName: 'User',
+					role: { slug: 'global:owner' },
+				},
+				variableId: 'var456',
+				variableKey: 'MY_VARIABLE',
+			};
 
-			expect(telemetry.track).toHaveBeenCalledWith('User created variable');
+			eventService.emit('variable-created', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User created variable', {
+				user_id: 'user123',
+			});
+		});
+
+		it('should track on `variable-created` event with projectId', () => {
+			const event: RelayEventMap['variable-created'] = {
+				user: {
+					id: 'user123',
+					email: 'test@example.com',
+					firstName: 'Test',
+					lastName: 'User',
+					role: { slug: 'global:owner' },
+				},
+				variableId: 'var456',
+				variableKey: 'MY_VARIABLE',
+				projectId: 'projectId',
+			};
+
+			eventService.emit('variable-created', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User created variable', {
+				user_id: 'user123',
+				project_id: 'projectId',
+			});
+		});
+
+		it('should track on `variable-updated` event without projectId', () => {
+			const event: RelayEventMap['variable-updated'] = {
+				user: {
+					id: 'user123',
+					email: 'test@example.com',
+					firstName: 'Test',
+					lastName: 'User',
+					role: { slug: 'global:owner' },
+				},
+				variableId: 'var456',
+				variableKey: 'MY_VARIABLE',
+			};
+
+			eventService.emit('variable-updated', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User updated variable', {
+				user_id: 'user123',
+			});
+		});
+
+		it('should track on `variable-updated` event with projectId', () => {
+			const event: RelayEventMap['variable-updated'] = {
+				user: {
+					id: 'user123',
+					email: 'test@example.com',
+					firstName: 'Test',
+					lastName: 'User',
+					role: { slug: 'global:owner' },
+				},
+				variableId: 'var456',
+				variableKey: 'MY_VARIABLE',
+				projectId: 'projectId',
+			};
+
+			eventService.emit('variable-updated', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User updated variable', {
+				user_id: 'user123',
+				project_id: 'projectId',
+			});
+		});
+
+		it('should track on `variable-deleted` event without projectId', () => {
+			const event: RelayEventMap['variable-deleted'] = {
+				user: {
+					id: 'user123',
+					email: 'test@example.com',
+					firstName: 'Test',
+					lastName: 'User',
+					role: { slug: 'global:owner' },
+				},
+				variableId: 'var456',
+				variableKey: 'MY_VARIABLE',
+			};
+
+			eventService.emit('variable-deleted', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User deleted variable', {
+				user_id: 'user123',
+			});
+		});
+
+		it('should track on `variable-deleted` event with projectId', () => {
+			const event: RelayEventMap['variable-deleted'] = {
+				user: {
+					id: 'user123',
+					email: 'test@example.com',
+					firstName: 'Test',
+					lastName: 'User',
+					role: { slug: 'global:owner' },
+				},
+				variableId: 'var456',
+				variableKey: 'MY_VARIABLE',
+				projectId: 'projectId',
+			};
+
+			eventService.emit('variable-deleted', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User deleted variable', {
+				user_id: 'user123',
+				project_id: 'projectId',
+			});
 		});
 	});
 
@@ -343,6 +481,133 @@ describe('TelemetryEventRelay', () => {
 				is_valid: true,
 				is_new: false,
 				error_message: undefined,
+			});
+		});
+
+		it('should track on `external-secrets-provider-reloaded` event', () => {
+			const event: RelayEventMap['external-secrets-provider-reloaded'] = {
+				vaultType: 'aws',
+			};
+
+			eventService.emit('external-secrets-provider-reloaded', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User reloaded external secrets', {
+				vault_type: 'aws',
+			});
+		});
+
+		it('should track on `external-secrets-connection-created` event with global scope', () => {
+			const event: RelayEventMap['external-secrets-connection-created'] = {
+				userId: 'user123',
+				providerKey: 'provider-key-123',
+				vaultType: 'gcp',
+				projects: [],
+			};
+
+			eventService.emit('external-secrets-connection-created', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User created external secrets connection', {
+				user_id: 'user123',
+				vault_type: 'gcp',
+				scope: 'global',
+				project_ids: [],
+			});
+		});
+
+		it('should track on `external-secrets-connection-created` event with project scope', () => {
+			const event: RelayEventMap['external-secrets-connection-created'] = {
+				userId: 'user123',
+				providerKey: 'provider-key-123',
+				vaultType: 'gcp',
+				projects: [
+					{ id: 'project1', name: 'Project 1' },
+					{ id: 'project2', name: 'Project 2' },
+				],
+			};
+
+			eventService.emit('external-secrets-connection-created', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User created external secrets connection', {
+				user_id: 'user123',
+				vault_type: 'gcp',
+				scope: 'project',
+				project_ids: ['project1', 'project2'],
+			});
+		});
+
+		it('should track on `external-secrets-connection-updated` event with global scope', () => {
+			const event: RelayEventMap['external-secrets-connection-updated'] = {
+				userId: 'user123',
+				providerKey: 'provider-key-123',
+				vaultType: 'aws',
+				projects: [],
+			};
+
+			eventService.emit('external-secrets-connection-updated', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User updated external secrets connection', {
+				user_id: 'user123',
+				vault_type: 'aws',
+				scope: 'global',
+				project_ids: [],
+			});
+		});
+
+		it('should track on `external-secrets-connection-updated` event with project scope', () => {
+			const event: RelayEventMap['external-secrets-connection-updated'] = {
+				userId: 'user123',
+				providerKey: 'provider-key-123',
+				vaultType: 'aws',
+				projects: [{ id: 'project1', name: 'Project 1' }],
+			};
+
+			eventService.emit('external-secrets-connection-updated', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User updated external secrets connection', {
+				user_id: 'user123',
+				vault_type: 'aws',
+				scope: 'project',
+				project_ids: ['project1'],
+			});
+		});
+
+		it('should track on `external-secrets-connection-deleted` event with global scope', () => {
+			const event: RelayEventMap['external-secrets-connection-deleted'] = {
+				userId: 'user123',
+				providerKey: 'provider-key-123',
+				vaultType: 'vault',
+				projects: [],
+			};
+
+			eventService.emit('external-secrets-connection-deleted', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User deleted external secrets connection', {
+				user_id: 'user123',
+				vault_type: 'vault',
+				scope: 'global',
+				project_ids: [],
+			});
+		});
+
+		it('should track on `external-secrets-connection-deleted` event with project scope', () => {
+			const event: RelayEventMap['external-secrets-connection-deleted'] = {
+				userId: 'user123',
+				providerKey: 'provider-key-123',
+				vaultType: 'vault',
+				projects: [
+					{ id: 'project1', name: 'Project 1' },
+					{ id: 'project2', name: 'Project 2' },
+					{ id: 'project3', name: 'Project 3' },
+				],
+			};
+
+			eventService.emit('external-secrets-connection-deleted', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User deleted external secrets connection', {
+				user_id: 'user123',
+				vault_type: 'vault',
+				scope: 'project',
+				project_ids: ['project1', 'project2', 'project3'],
 			});
 		});
 	});
@@ -373,7 +638,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				publicApi: true,
 			};
@@ -393,7 +658,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				publicApi: true,
 			};
@@ -415,7 +680,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				inputString: 'n8n-nodes-package',
 				packageName: 'n8n-nodes-package',
@@ -448,7 +713,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				packageName: 'n8n-nodes-package',
 				packageVersionCurrent: '1.0.0',
@@ -478,7 +743,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				packageName: 'n8n-nodes-package',
 				packageVersion: '1.0.0',
@@ -508,13 +773,14 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				credentialType: 'github',
 				credentialId: 'cred123',
 				publicApi: false,
 				projectId: 'project123',
 				projectType: 'personal',
+				isDynamic: false,
 			};
 
 			eventService.emit('credentials-created', event);
@@ -525,6 +791,7 @@ describe('TelemetryEventRelay', () => {
 				credential_id: 'cred123',
 				project_id: 'project123',
 				project_type: 'personal',
+				is_dynamic: false,
 			});
 		});
 
@@ -535,7 +802,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				credentialType: 'github',
 				credentialId: 'cred123',
@@ -563,10 +830,11 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				credentialId: 'cred123',
 				credentialType: 'github',
+				isDynamic: true,
 			};
 
 			eventService.emit('credentials-updated', event);
@@ -575,6 +843,7 @@ describe('TelemetryEventRelay', () => {
 				user_id: 'user123',
 				credential_type: 'github',
 				credential_id: 'cred123',
+				is_dynamic: true,
 			});
 		});
 
@@ -585,7 +854,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				credentialId: 'cred123',
 				credentialType: 'github',
@@ -673,6 +942,38 @@ describe('TelemetryEventRelay', () => {
 		});
 	});
 
+	describe('SSO events', () => {
+		it('should track on `sso-user-project-access-updated` event', () => {
+			const event: RelayEventMap['sso-user-project-access-updated'] = {
+				userId: 'user123',
+				projectsRemoved: 2,
+				projectsAdded: 3,
+			};
+
+			eventService.emit('sso-user-project-access-updated', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('Sso user project access update', {
+				user_id: 'user123',
+				projects_removed: 2,
+				projects_added: 3,
+			});
+		});
+
+		it('should track on `sso-user-instance-role-updated` event', () => {
+			const event: RelayEventMap['sso-user-instance-role-updated'] = {
+				userId: 'user123',
+				role: 'global:admin',
+			};
+
+			eventService.emit('sso-user-instance-role-updated', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('Sso user instance role update', {
+				user_id: 'user123',
+				role: 'global:admin',
+			});
+		});
+	});
+
 	describe('workflow events', () => {
 		it('should track on `workflow-created` event', async () => {
 			const event: RelayEventMap['workflow-created'] = {
@@ -681,7 +982,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				workflow: mock<IWorkflowBase>({ id: 'workflow123', name: 'Test Workflow', nodes: [] }),
 				publicApi: false,
@@ -703,6 +1004,63 @@ describe('TelemetryEventRelay', () => {
 			});
 		});
 
+		it('should truncate node_graph_string when it exceeds size limit', async () => {
+			const largeNodeGraph: INodesGraphResult = {
+				nodeGraph: {
+					node_types: Array.from({ length: 1000 }, (_, i) => `n8n-nodes-base.node${i}`),
+					node_connections: Array.from({ length: 1000 }, (_, i) => ({
+						start: `${i}`,
+						end: `${i + 1}`,
+					})),
+					nodes: Object.fromEntries(
+						Array.from({ length: 500 }, (_, i) => [
+							`${i}`,
+							{
+								id: `node-${i}`,
+								type: `n8n-nodes-base.veryLongNodeTypeName${i}`,
+								version: 1,
+								position: [i * 100, i * 100],
+							},
+						]),
+					),
+					notes: {},
+					is_pinned: false,
+				},
+				nameIndices: {},
+				webhookNodeNames: [],
+				evaluationTriggerNodeNames: [],
+			};
+
+			jest.spyOn(TelemetryHelpers, 'generateNodesGraph').mockReturnValueOnce(largeNodeGraph);
+
+			const event: RelayEventMap['workflow-created'] = {
+				user: {
+					id: 'user123',
+					email: 'user@example.com',
+					firstName: 'John',
+					lastName: 'Doe',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
+				},
+				workflow: mock<IWorkflowBase>({ id: 'workflow123', name: 'Test Workflow', nodes: [] }),
+				publicApi: false,
+				projectId: 'project123',
+				projectType: 'personal',
+			};
+
+			eventService.emit('workflow-created', event);
+
+			await flushPromises();
+
+			expect(telemetry.track).toHaveBeenCalledWith('User created workflow', {
+				user_id: 'user123',
+				workflow_id: 'workflow123',
+				node_graph_string: '{}',
+				public_api: false,
+				project_id: 'project123',
+				project_type: 'personal',
+			});
+		});
+
 		it('should track on `workflow-archived` event', () => {
 			const event: RelayEventMap['workflow-archived'] = {
 				user: {
@@ -710,7 +1068,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				workflowId: 'workflow123',
 				publicApi: false,
@@ -732,7 +1090,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				workflowId: 'workflow123',
 				publicApi: false,
@@ -754,7 +1112,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				workflowId: 'workflow123',
 				publicApi: false,
@@ -790,6 +1148,7 @@ describe('TelemetryEventRelay', () => {
 				user_id: 'user123',
 				version_cli: N8N_VERSION,
 				workflow_id: 'workflow123',
+				used_dynamic_credentials: false,
 			});
 		});
 
@@ -800,7 +1159,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				workflow: mock<IWorkflowDb>({ id: 'workflow123', name: 'Test Workflow', nodes: [] }),
 				publicApi: false,
@@ -820,6 +1179,58 @@ describe('TelemetryEventRelay', () => {
 				num_tags: 0,
 				public_api: false,
 				sharing_role: undefined,
+				meta: undefined, // workflow.meta is undefined in mock
+				workflow_edited_no_pos: false,
+				credential_edited: false,
+				ai_builder_assisted: false,
+				identity_extractor_changed: false,
+			});
+		});
+
+		it('should track resolver settings when credentialResolverId changes', async () => {
+			const event: RelayEventMap['workflow-saved'] = {
+				user: {
+					id: 'user123',
+					email: 'user@example.com',
+					firstName: 'John',
+					lastName: 'Doe',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
+				},
+				workflow: mock<IWorkflowDb>({
+					id: 'workflow123',
+					name: 'Test Workflow',
+					nodes: [],
+					settings: { credentialResolverId: 'resolver-123' },
+				}),
+				publicApi: false,
+				settingsChanged: {
+					credentialResolverId: {
+						from: null,
+						to: 'resolver-123',
+					},
+				},
+			};
+
+			eventService.emit('workflow-saved', event);
+
+			await flushPromises();
+
+			expect(telemetry.track).toHaveBeenCalledWith('User saved workflow', {
+				user_id: 'user123',
+				workflow_id: 'workflow123',
+				node_graph_string: expect.any(String),
+				notes_count_overlapping: 0,
+				notes_count_non_overlapping: 0,
+				version_cli: expect.any(String),
+				num_tags: 0,
+				public_api: false,
+				sharing_role: undefined,
+				meta: undefined,
+				workflow_edited_no_pos: false,
+				credential_edited: false,
+				ai_builder_assisted: false,
+				credential_resolver_id: 'resolver-123',
+				identity_extractor_changed: false,
 			});
 		});
 
@@ -848,7 +1259,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				fieldsChanged: ['firstName', 'lastName'],
 			};
@@ -868,7 +1279,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				publicApi: false,
 				targetUserOldStatus: 'active',
@@ -896,7 +1307,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				targetUserId: ['user456'],
 				publicApi: false,
@@ -922,7 +1333,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				userType: 'email',
 				wasDisabledLdapUser: false,
@@ -1093,7 +1504,7 @@ describe('TelemetryEventRelay', () => {
 	});
 
 	describe('workflow execution events', () => {
-		it('should track on `first-production-workflow-succeeded` event', () => {
+		it('should track on `first-production-workflow-succeeded` event for personal project', () => {
 			const event: RelayEventMap['first-production-workflow-succeeded'] = {
 				projectId: 'project123',
 				workflowId: 'workflow123',
@@ -1106,6 +1517,22 @@ describe('TelemetryEventRelay', () => {
 				project_id: 'project123',
 				workflow_id: 'workflow123',
 				user_id: 'user123',
+			});
+		});
+
+		it('should track on `first-production-workflow-succeeded` event for team project with null userId', () => {
+			const event: RelayEventMap['first-production-workflow-succeeded'] = {
+				projectId: 'project123',
+				workflowId: 'workflow123',
+				userId: null,
+			};
+
+			eventService.emit('first-production-workflow-succeeded', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('Workflow first prod success', {
+				project_id: 'project123',
+				workflow_id: 'workflow123',
+				user_id: undefined,
 			});
 		});
 
@@ -1140,7 +1567,7 @@ describe('TelemetryEventRelay', () => {
 					email: 'user@example.com',
 					firstName: 'John',
 					lastName: 'Doe',
-					role: 'global:owner',
+					role: { slug: GLOBAL_OWNER_ROLE.slug },
 				},
 				messageType: 'New user invite',
 				publicApi: false,
@@ -1186,11 +1613,12 @@ describe('TelemetryEventRelay', () => {
 			id: 'workflow123',
 			name: 'Test Workflow',
 			active: true,
+			activeVersionId: 'some-version-id',
 			nodes: [
 				{
 					id: 'node1',
 					name: 'Start',
-					type: 'n8n-nodes-base.start',
+					type: 'n8n-nodes-base.manualTrigger',
 					parameters: {},
 					typeVersion: 1,
 					position: [100, 200],
@@ -1216,18 +1644,18 @@ describe('TelemetryEventRelay', () => {
 		});
 
 		it('should track successful workflow execution', async () => {
-			const runData = mock<IRun>({
+			const runData = {
 				finished: true,
 				status: 'success',
 				mode: 'manual',
-				data: { resultData: {} },
-			});
+				data: { resultData: { runData: {} } },
+			} as unknown as IRun;
 
 			const event: RelayEventMap['workflow-post-execute'] = {
 				workflow: mockWorkflowBase,
 				executionId: 'execution123',
 				userId: 'user123',
-				runData: runData as unknown as IRun,
+				runData,
 			};
 
 			eventService.emit('workflow-post-execute', event);
@@ -1251,41 +1679,35 @@ describe('TelemetryEventRelay', () => {
 				mock<CredentialsEntity>({ type: 'openAiApi', isManaged: false }),
 			);
 
+			const errorNode: INode = {
+				id: '1',
+				typeVersion: 1,
+				name: 'Jira',
+				type: 'n8n-nodes-base.jira',
+				parameters: {},
+				position: [100, 200],
+			};
+
+			const error = new NodeApiError(
+				errorNode,
+				{
+					message: 'Error message',
+					description: 'Incorrect API key provided',
+					httpCode: '401',
+					stack: '',
+				},
+				{
+					message: 'Error message',
+					description: 'Error description',
+					level: 'warning',
+					functionality: 'regular',
+				},
+			);
+
 			const runData = {
 				status: 'error',
 				mode: 'manual',
-				data: {
-					startData: {
-						destinationNode: 'OpenAI',
-						runNodeFilter: ['OpenAI'],
-					},
-					resultData: {
-						runData: {},
-						lastNodeExecuted: 'OpenAI',
-						error: new NodeApiError(
-							{
-								id: '1',
-								typeVersion: 1,
-								name: 'Jira',
-								type: 'n8n-nodes-base.jira',
-								parameters: {},
-								position: [100, 200],
-							},
-							{
-								message: 'Error message',
-								description: 'Incorrect API key provided',
-								httpCode: '401',
-								stack: '',
-							},
-							{
-								message: 'Error message',
-								description: 'Error description',
-								level: 'warning',
-								functionality: 'regular',
-							},
-						),
-					},
-				},
+				data: createErrorExecutionData(errorNode, error),
 			} as IRun;
 
 			const nodeGraph: INodesGraphResult = {
@@ -1353,41 +1775,35 @@ describe('TelemetryEventRelay', () => {
 		it('should call telemetry.track when manual node execution finished with canceled error message', async () => {
 			sharedWorkflowRepository.findSharingRole.mockResolvedValue('workflow:owner');
 
+			const errorNode: INode = {
+				id: '1',
+				typeVersion: 1,
+				name: 'Jira',
+				type: 'n8n-nodes-base.jira',
+				parameters: {},
+				position: [100, 200],
+			};
+
+			const error = new NodeApiError(
+				errorNode,
+				{
+					message: 'Error message',
+					description: 'Incorrect API key provided',
+					httpCode: '401',
+					stack: '',
+				},
+				{
+					message: 'Error message canceled',
+					description: 'Error description',
+					level: 'warning',
+					functionality: 'regular',
+				},
+			);
+
 			const runData = {
 				status: 'error',
 				mode: 'manual',
-				data: {
-					startData: {
-						destinationNode: 'OpenAI',
-						runNodeFilter: ['OpenAI'],
-					},
-					resultData: {
-						runData: {},
-						lastNodeExecuted: 'OpenAI',
-						error: new NodeApiError(
-							{
-								id: '1',
-								typeVersion: 1,
-								name: 'Jira',
-								type: 'n8n-nodes-base.jira',
-								parameters: {},
-								position: [100, 200],
-							},
-							{
-								message: 'Error message',
-								description: 'Incorrect API key provided',
-								httpCode: '401',
-								stack: '',
-							},
-							{
-								message: 'Error message canceled',
-								description: 'Error description',
-								level: 'warning',
-								functionality: 'regular',
-							},
-						),
-					},
-				},
+				data: createErrorExecutionData(errorNode, error),
 			} as IRun;
 
 			const nodeGraph: INodesGraphResult = {
@@ -1560,44 +1976,41 @@ describe('TelemetryEventRelay', () => {
 				mock<CredentialsEntity>({ type: 'openAiApi', isManaged: true }),
 			);
 
+			const errorNode: INode = {
+				id: '1',
+				typeVersion: 1,
+				name: 'Jira',
+				type: 'n8n-nodes-base.jira',
+				parameters: {},
+				position: [100, 200],
+			};
+
+			const error = new NodeApiError(
+				errorNode,
+				{
+					message: 'Error message',
+					description: 'Incorrect API key provided',
+					httpCode: '401',
+					stack: '',
+				},
+				{
+					message: 'Error message',
+					description: 'Error description',
+					level: 'warning',
+					functionality: 'regular',
+				},
+			);
+
+			const data = createErrorExecutionData(errorNode, error);
+			// Override executionData to include credentials for this test
+			data.executionData!.nodeExecutionStack = [
+				{ node: { credentials: { openAiApi: { id: 'nhu-l8E4hX' } } } } as any,
+			];
+
 			const runData = {
 				status: 'error',
 				mode: 'manual',
-				data: {
-					executionData: {
-						nodeExecutionStack: [{ node: { credentials: { openAiApi: { id: 'nhu-l8E4hX' } } } }],
-					},
-					startData: {
-						destinationNode: 'OpenAI',
-						runNodeFilter: ['OpenAI'],
-					},
-					resultData: {
-						runData: {},
-						lastNodeExecuted: 'OpenAI',
-						error: new NodeApiError(
-							{
-								id: '1',
-								typeVersion: 1,
-								name: 'Jira',
-								type: 'n8n-nodes-base.jira',
-								parameters: {},
-								position: [100, 200],
-							},
-							{
-								message: 'Error message',
-								description: 'Incorrect API key provided',
-								httpCode: '401',
-								stack: '',
-							},
-							{
-								message: 'Error message',
-								description: 'Error description',
-								level: 'warning',
-								functionality: 'regular',
-							},
-						),
-					},
-				},
+				data,
 			} as unknown as IRun;
 
 			const nodeGraph: INodesGraphResult = {
@@ -1734,6 +2147,86 @@ describe('TelemetryEventRelay', () => {
 			await flushPromises();
 
 			expect(telemetry.track).toHaveBeenCalledWith('User ran out of free AI credits');
+		});
+	});
+	describe('workflow history compaction events', () => {
+		it('should call telemetry.track when compacting history finishes', async () => {
+			const payload = {
+				compactionStartTime: new Date('2026-01-23T09:44:49.792Z'),
+				durationMs: 3500,
+				windowStartIso: '2026-01-22T09:44:49.792Z',
+				windowEndIso: '2026-01-22T10:44:49.792Z',
+				errorCount: 3,
+				totalVersionsSeen: 25,
+				totalVersionsDeleted: 23,
+				workflowsProcessed: 3,
+			} satisfies RelayEventMap['history-compacted'];
+
+			eventService.emit('history-compacted', payload);
+
+			expect(telemetry.track).toHaveBeenCalledWith('Instance compacted workflow history', {
+				workflows_processed: payload['workflowsProcessed'],
+				total_versions_seen: payload['totalVersionsSeen'],
+				total_versions_deleted: payload['totalVersionsDeleted'],
+				window_start_iso: new Date(payload['windowStartIso']),
+				window_end_iso: new Date(payload['windowEndIso']),
+				error_count: payload['errorCount'],
+				compaction_start_time_iso: payload['compactionStartTime'],
+				compaction_duration_ms: payload['durationMs'],
+				compaction_batch_delay_ms: globalConfig.workflowHistoryCompaction.batchDelayMs,
+				compaction_batch_size: globalConfig.workflowHistoryCompaction.batchSize,
+				compaction_trimming_optimizing_time_window_hours:
+					globalConfig.workflowHistoryCompaction.optimizingTimeWindowHours,
+				compaction_trimming_time_window_days:
+					globalConfig.workflowHistoryCompaction.trimmingTimeWindowDays,
+			});
+		});
+	});
+
+	describe('instance policies events', () => {
+		it('should track workflow_publishing update', () => {
+			const event: RelayEventMap['instance-policies-updated'] = {
+				user: { id: 'user123' },
+				settingName: 'workflow_publishing',
+				value: true,
+			};
+
+			eventService.emit('instance-policies-updated', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User updated instance policies', {
+				user_id: 'user123',
+				workflow_publishing: true,
+			});
+		});
+
+		it('should track workflow_sharing update', () => {
+			const event: RelayEventMap['instance-policies-updated'] = {
+				user: { id: 'user789' },
+				settingName: 'workflow_sharing',
+				value: true,
+			};
+
+			eventService.emit('instance-policies-updated', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User updated instance policies', {
+				user_id: 'user789',
+				workflow_sharing: true,
+			});
+		});
+
+		it('should track 2fa_enforcement update', () => {
+			const event: RelayEventMap['instance-policies-updated'] = {
+				user: { id: 'user456' },
+				settingName: '2fa_enforcement',
+				value: false,
+			};
+
+			eventService.emit('instance-policies-updated', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User updated instance policies', {
+				user_id: 'user456',
+				'2fa_enforcement': false,
+			});
 		});
 	});
 });

@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ElSwitch } from 'element-plus';
-import { computed, reactive, onMounted, ref, watch, useSlots } from 'vue';
+import { computed, reactive, onMounted, ref, watch } from 'vue';
 
 import { getValidationError, VALIDATORS } from './validators';
 import { t } from '../../locale';
@@ -13,12 +13,12 @@ import type {
 	InputTypePropType,
 	SwitchModelValuePropType,
 	CheckboxModelValuePropType,
-	CheckboxLabelSizePropType,
 	InputAutocompletePropType,
 } from '../../types';
-import N8nCheckbox from '../N8nCheckbox';
+import N8nCheckbox from '../../v2/components/Checkbox/Checkbox.vue';
 import N8nInput from '../N8nInput';
 import N8nInputLabel from '../N8nInputLabel';
+import N8nLink from '../N8nLink';
 import N8nOption from '../N8nOption';
 import N8nSelect from '../N8nSelect';
 
@@ -76,8 +76,6 @@ const state = reactive({
 	hasBlurred: false,
 	isTyping: false,
 });
-
-const slots = useSlots();
 
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 
@@ -160,8 +158,6 @@ const validationError = computed<{ message: string } | null>(() => {
 	return null;
 });
 
-const hasDefaultSlot = computed(() => !!slots.default);
-
 const showErrors = computed(
 	() =>
 		!!validationError.value &&
@@ -185,7 +181,6 @@ defineExpose({ inputRef });
 		ref="inputRef"
 		:label="label"
 		:disabled="disabled"
-		:label-size="labelSize as CheckboxLabelSizePropType"
 		:model-value="modelValue as CheckboxModelValuePropType"
 		@update:model-value="onUpdateModelValue"
 		@focus="onFocus"
@@ -202,6 +197,7 @@ defineExpose({ inputRef });
 			{{ tooltipText }}
 		</template>
 		<ElSwitch
+			:id="name"
 			:model-value="modelValue as SwitchModelValuePropType"
 			:active-color="activeColor"
 			:inactive-color="inactiveColor"
@@ -217,10 +213,11 @@ defineExpose({ inputRef });
 		:size="labelSize"
 	>
 		<div :class="showErrors ? $style.errorInput : ''" @keydown.stop @keydown.enter.exact="onEnter">
-			<slot v-if="hasDefaultSlot" />
+			<slot v-if="$slots.default" />
 			<N8nSelect
 				v-else-if="type === 'select' || type === 'multi-select'"
 				ref="inputRef"
+				:id="name"
 				:class="{ [$style.multiSelectSmallTags]: tagSize === 'small' }"
 				:model-value="modelValue"
 				:placeholder="placeholder"
@@ -245,6 +242,7 @@ defineExpose({ inputRef });
 			<N8nInput
 				v-else
 				ref="inputRef"
+				:id="name"
 				:name="name"
 				:type="type as InputTypePropType"
 				:placeholder="placeholder"
@@ -261,7 +259,7 @@ defineExpose({ inputRef });
 		</div>
 		<div v-if="showErrors" :class="$style.errors">
 			<span v-text="validationError?.message" />
-			<n8n-link
+			<N8nLink
 				v-if="documentationUrl && documentationText"
 				:to="documentationUrl"
 				:new-window="true"
@@ -269,7 +267,7 @@ defineExpose({ inputRef });
 				theme="danger"
 			>
 				{{ documentationText }}
-			</n8n-link>
+			</N8nLink>
 		</div>
 		<div v-else-if="infoText" :class="$style.infoText">
 			<span size="small" v-text="infoText" />
@@ -279,19 +277,19 @@ defineExpose({ inputRef });
 
 <style lang="scss" module>
 .infoText {
-	margin-top: var(--spacing-2xs);
-	font-size: var(--font-size-2xs);
-	font-weight: var(--font-weight-regular);
-	color: var(--color-text-base);
+	margin-top: var(--spacing--2xs);
+	font-size: var(--font-size--2xs);
+	font-weight: var(--font-weight--regular);
+	color: var(--color--text);
 }
 
 .errors {
 	composes: infoText;
-	color: var(--color-danger);
+	color: var(--color--danger);
 }
 
 .errorInput {
-	--input-border-color: var(--color-danger);
+	--input--border-color: var(--color--danger);
 }
 
 .multiSelectSmallTags {

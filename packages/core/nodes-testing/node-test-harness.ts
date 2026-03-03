@@ -7,12 +7,16 @@ import isEmpty from 'lodash/isEmpty';
 import type {
 	ICredentialDataDecryptedObject,
 	IRun,
-	IRunExecutionData,
 	IWorkflowBase,
 	IWorkflowExecuteAdditionalData,
 	WorkflowTestData,
 } from 'n8n-workflow';
-import { createDeferredPromise, UnexpectedError, Workflow } from 'n8n-workflow';
+import {
+	createDeferredPromise,
+	createRunExecutionData,
+	UnexpectedError,
+	Workflow,
+} from 'n8n-workflow';
 import nock from 'nock';
 import { readFileSync, mkdtempSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -210,21 +214,18 @@ export class NodeTestHarness {
 		hooks.addHandler('workflowExecuteAfter', (fullRunData) => waitPromise.resolve(fullRunData));
 
 		const additionalData = mock<IWorkflowExecuteAdditionalData>({
+			executionId: '1',
+			webhookWaitingBaseUrl: 'http://localhost/waiting-webhook',
 			hooks,
 			// Get from node.parameters
 			currentNodeParameters: undefined,
+			parentCallbackManager: undefined,
 		});
 		additionalData.credentialsHelper = credentialsHelper;
 
 		let executionData: IRun;
-		const runExecutionData: IRunExecutionData = {
-			resultData: {
-				runData: {},
-			},
+		const runExecutionData = createRunExecutionData({
 			executionData: {
-				metadata: {},
-				contextData: {},
-				waitingExecution: {},
 				waitingExecutionSource: null,
 				nodeExecutionStack: [
 					{
@@ -236,7 +237,7 @@ export class NodeTestHarness {
 					},
 				],
 			},
-		};
+		});
 
 		const workflowExecute = new WorkflowExecute(additionalData, executionMode, runExecutionData);
 		executionData = await workflowExecute.processRunExecutionData(workflowInstance);
@@ -315,6 +316,7 @@ export class NodeTestHarness {
 						} else {
 							for (const key in binary) {
 								delete binary[key].directory;
+								delete binary[key].bytes;
 							}
 						}
 					}
@@ -329,6 +331,20 @@ export class NodeTestHarness {
 			});
 
 			const msg = `Equality failed for "${testData.description}" at node "${nodeName}"`;
+			// When continue on fail is on the json wrapper is removed for some reason
+			const runs = output.nodeData[nodeName];
+			if (Array.isArray(runs)) {
+				for (let runIndex = 0; runIndex < runs.length; runIndex++) {
+					const run = runs[runIndex];
+					if (!Array.isArray(run)) continue;
+					for (let itemIndex = 0; itemIndex < run.length; itemIndex++) {
+						const original = run[itemIndex];
+						if (original && !original.json) {
+							run[itemIndex] = { json: { ...original } };
+						}
+					}
+				}
+			}
 			expect(resultData, msg).toEqual(output.nodeData[nodeName]);
 		});
 

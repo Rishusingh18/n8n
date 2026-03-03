@@ -9,12 +9,18 @@ import type {
 	Workflow,
 	WorkflowExecuteMode,
 	ICredentialsHelper,
-	Expression,
 	INodeType,
 	INodeTypes,
 	ICredentialDataDecryptedObject,
 } from 'n8n-workflow';
-import { ApplicationError, ExpressionError, NodeConnectionTypes } from 'n8n-workflow';
+import {
+	ApplicationError,
+	ExpressionError,
+	NodeConnectionTypes,
+	type WorkflowExpression,
+} from 'n8n-workflow';
+
+import type { ExecutionLifecycleHooks } from '@/execution-engine/execution-lifecycle-hooks';
 
 import { describeCommonTests } from './shared-tests';
 import { ExecuteContext } from '../execute-context';
@@ -39,16 +45,22 @@ describe('ExecuteContext', () => {
 		},
 	});
 	const nodeTypes = mock<INodeTypes>();
-	const expression = mock<Expression>();
+	const expression = mock<WorkflowExpression>();
 	const workflow = mock<Workflow>({ expression, nodeTypes });
-	const node = mock<INode>({
+	const node: INode = {
+		id: 'test-node-id',
 		name: 'Test Node',
+		type: 'testNodeType',
+		typeVersion: 1,
+		position: [0, 0],
 		credentials: {
 			[testCredentialType]: {
 				id: 'testCredentialId',
+				name: 'testCredential',
 			},
 		},
-	});
+		parameters: {},
+	};
 	node.parameters = {
 		testParameter: 'testValue',
 		nullParameter: null,
@@ -257,6 +269,118 @@ describe('ExecuteContext', () => {
 			expect(sendMessageSpy.mock.calls[0][2]).toBe(stringArg);
 
 			sendMessageSpy.mockRestore();
+		});
+	});
+
+	describe('sendChunk', () => {
+		test('should send call hook with structured chunk', async () => {
+			const hooksMock: ExecutionLifecycleHooks = mock<ExecutionLifecycleHooks>({
+				runHook: jest.fn(),
+			});
+			const additionalDataWithHooks: IWorkflowExecuteAdditionalData = {
+				...additionalData,
+				hooks: hooksMock,
+			};
+
+			const testExecuteContext = new ExecuteContext(
+				workflow,
+				node,
+				additionalDataWithHooks,
+				'manual',
+				runExecutionData,
+				runIndex,
+				connectionInputData,
+				inputData,
+				executeData,
+				[closeFn],
+				abortSignal,
+			);
+
+			await testExecuteContext.sendChunk('item', 0, 'test');
+
+			expect(hooksMock.runHook).toHaveBeenCalledWith('sendChunk', [
+				expect.objectContaining({
+					type: 'item',
+					content: 'test',
+					metadata: expect.objectContaining({
+						nodeName: 'Test Node',
+						nodeId: 'test-node-id',
+						runIndex: 0,
+						itemIndex: 0,
+						timestamp: expect.any(Number),
+					}),
+				}),
+			]);
+		});
+
+		test('should send chunk without content when content is undefined', async () => {
+			const hooksMock: ExecutionLifecycleHooks = mock<ExecutionLifecycleHooks>({
+				runHook: jest.fn(),
+			});
+			const additionalDataWithHooks: IWorkflowExecuteAdditionalData = {
+				...additionalData,
+				hooks: hooksMock,
+			};
+
+			const testExecuteContext = new ExecuteContext(
+				workflow,
+				node,
+				additionalDataWithHooks,
+				'manual',
+				runExecutionData,
+				runIndex,
+				connectionInputData,
+				inputData,
+				executeData,
+				[closeFn],
+				abortSignal,
+			);
+
+			await testExecuteContext.sendChunk('begin', 0);
+
+			expect(hooksMock.runHook).toHaveBeenCalledWith('sendChunk', [
+				expect.objectContaining({
+					type: 'begin',
+					content: undefined,
+					metadata: expect.objectContaining({
+						nodeName: 'Test Node',
+						nodeId: 'test-node-id',
+						runIndex: 0,
+						itemIndex: 0,
+						timestamp: expect.any(Number),
+					}),
+				}),
+			]);
+		});
+
+		test('should handle when hooks is undefined', async () => {
+			const additionalDataWithoutHooks = {
+				...additionalData,
+				hooks: undefined,
+			};
+
+			const testExecuteContext = new ExecuteContext(
+				workflow,
+				node,
+				additionalDataWithoutHooks,
+				'manual',
+				runExecutionData,
+				runIndex,
+				connectionInputData,
+				inputData,
+				executeData,
+				[closeFn],
+				abortSignal,
+			);
+
+			// Should not throw error
+			await expect(testExecuteContext.sendChunk('item', 0, 'test')).resolves.toBeUndefined();
+		});
+	});
+
+	describe('isToolExecution', () => {
+		it('should return false for regular workflow execution', () => {
+			expect(executeContext.isToolExecution()).toBe(false);
 		});
 	});
 });

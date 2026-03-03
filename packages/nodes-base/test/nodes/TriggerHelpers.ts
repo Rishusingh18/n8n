@@ -22,7 +22,20 @@ import {
 	type NodeTypeAndVersion,
 	type VersionedNodeType,
 	type Workflow,
+	type CronContext,
+	type Cron,
 } from 'n8n-workflow';
+
+const logger = mock({
+	scoped: jest.fn().mockReturnValue(
+		mock({
+			debug: jest.fn(),
+			info: jest.fn(),
+			warn: jest.fn(),
+			error: jest.fn(),
+		}),
+	),
+});
 
 type MockDeepPartial<T> = Parameters<typeof mock<T>>[0];
 
@@ -70,23 +83,43 @@ export async function testTriggerNode(
 	) as INode;
 	const workflow = mock<Workflow>({ timezone: options.timezone ?? 'Europe/Berlin' });
 
-	const scheduledTaskManager = new ScheduledTaskManager(mock<InstanceSettings>());
+	const scheduledTaskManager = new ScheduledTaskManager(
+		mock<InstanceSettings>(),
+		logger as any,
+		mock(),
+		mock(),
+	);
 	const helpers = mock<ITriggerFunctions['helpers']>({
 		createDeferredPromise,
 		returnJsonArray,
-		registerCron: (cronExpression, onTick) =>
-			scheduledTaskManager.registerCron(workflow, cronExpression, onTick),
+		registerCron: (cron: Cron, onTick) => {
+			const ctx: CronContext = {
+				expression: cron.expression,
+				recurrence: cron.recurrence,
+				nodeId: node.id,
+				workflowId: workflow.id,
+				timezone: workflow.timezone,
+			};
+			scheduledTaskManager.registerCron(ctx, onTick);
+		},
 	});
 
 	const triggerFunctions = mock<ITriggerFunctions>({
 		helpers,
 		emit,
+		logger: mock({
+			debug: jest.fn(),
+			info: jest.fn(),
+			warn: jest.fn(),
+			error: jest.fn(),
+		}),
 		getTimezone: () => timezone,
 		getNode: () => node,
 		getCredentials: async <T extends object = ICredentialDataDecryptedObject>() =>
 			(options.credential ?? {}) as T,
 		getMode: () => options.mode ?? 'trigger',
 		getWorkflowStaticData: () => options.workflowStaticData ?? {},
+		getWorkflowSettings: () => ({}),
 		getNodeParameter: (parameterName, fallback) => get(node.parameters, parameterName) ?? fallback,
 	});
 
@@ -94,11 +127,11 @@ export async function testTriggerNode(
 
 	if (options.mode === 'manual') {
 		expect(response?.manualTriggerFunction).toBeInstanceOf(Function);
-		await response?.manualTriggerFunction?.();
 	}
 
 	return {
 		close: jest.fn(response?.closeFunction),
+		manualTriggerFunction: options.mode === 'manual' ? response?.manualTriggerFunction : undefined,
 		emit,
 	};
 }
@@ -130,11 +163,24 @@ export async function testWebhookTriggerNode(
 	) as INode;
 	const workflow = mock<Workflow>({ timezone: options.timezone ?? 'Europe/Berlin' });
 
-	const scheduledTaskManager = new ScheduledTaskManager(mock<InstanceSettings>());
+	const scheduledTaskManager = new ScheduledTaskManager(
+		mock<InstanceSettings>(),
+		logger as any,
+		mock(),
+		mock(),
+	);
 	const helpers = mock<ITriggerFunctions['helpers']>({
 		returnJsonArray,
-		registerCron: (cronExpression, onTick) =>
-			scheduledTaskManager.registerCron(workflow, cronExpression, onTick),
+		registerCron: (cron: Cron, onTick) => {
+			const ctx: CronContext = {
+				expression: cron.expression,
+				recurrence: cron.recurrence,
+				nodeId: node.id,
+				workflowId: workflow.id,
+				timezone: workflow.timezone,
+			};
+			scheduledTaskManager.registerCron(ctx, onTick);
+		},
 		prepareBinaryData: options.helpers?.prepareBinaryData ?? jest.fn(),
 	});
 
@@ -153,7 +199,7 @@ export async function testWebhookTriggerNode(
 		getMode: () => options.mode ?? 'trigger',
 		getInstanceId: () => 'instanceId',
 		getBodyData: () => options.bodyData ?? {},
-		getHeaderData: () => options.headerData ?? {},
+		getHeaderData: () => options.headerData ?? request.headers ?? {},
 		getInputConnectionData: async () => ({}),
 		getNodeWebhookUrl: (name) => `/test-webhook-url/${name}`,
 		getParamsData: () => ({}),
@@ -163,6 +209,7 @@ export async function testWebhookTriggerNode(
 		getWorkflow: () => options.workflow ?? mock<Workflow>(),
 		getWebhookName: () => options.webhookName ?? 'default',
 		getWorkflowStaticData: () => options.workflowStaticData ?? {},
+		getWorkflowSettings: () => ({}),
 		getNodeParameter: (parameterName, fallback) => get(node.parameters, parameterName) ?? fallback,
 		getChildNodes: () => options.childNodes ?? [],
 		getCredentials: async <T extends object = ICredentialDataDecryptedObject>() =>

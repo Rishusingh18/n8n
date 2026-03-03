@@ -9,9 +9,7 @@ import type { PostgresNodeCredentials } from 'n8n-nodes-base/dist/nodes/Postgres
 import type { INodeProperties } from 'n8n-workflow';
 import type pg from 'pg';
 
-import { metadataFilterField } from '@utils/sharedFields';
-
-import { createVectorStoreNode } from '../shared/createVectorStoreNode/createVectorStoreNode';
+import { metadataFilterField, createVectorStoreNode } from '@n8n/ai-utilities';
 
 type CollectionOptions = {
 	useCollection?: boolean;
@@ -254,7 +252,7 @@ export class VectorStorePGVector extends createVectorStoreNode<ExtendedPGVectorS
 			{},
 		) as CollectionOptions;
 
-		if (collectionOptions && collectionOptions.useCollection) {
+		if (collectionOptions?.useCollection) {
 			config.collectionName = collectionOptions.collectionName;
 			config.collectionTableName = collectionOptions.collectionTableName;
 		}
@@ -296,7 +294,7 @@ export class VectorStorePGVector extends createVectorStoreNode<ExtendedPGVectorS
 			{},
 		) as CollectionOptions;
 
-		if (collectionOptions && collectionOptions.useCollection) {
+		if (collectionOptions?.useCollection) {
 			config.collectionName = collectionOptions.collectionName;
 			config.collectionTableName = collectionOptions.collectionTableName;
 		}
